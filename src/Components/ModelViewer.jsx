@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState, Suspense } from "react";
+import React, { useRef, useEffect, useState, Suspense ,useFrame} from "react";
 import { Canvas, useThree } from "@react-three/fiber";
 import { ARButton } from "three/examples/jsm/webxr/ARButton.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";

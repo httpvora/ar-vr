@@ -6,10 +6,10 @@ export default defineConfig({
   plugins: [react()],
   assetsInclude: ['**/*.glb'], // ✅ allows .glb 3D model imports
   optimizeDeps: {
-    include: ['three', '@react-three/fiber', '@react-three/drei']
+    include: ['three', '@react-three/fiber', '@react-three/drei','@react-three/xr']
   },
   server: {
-    https: true,
+    https: false,
     port: 5178,
     host: true // ✅ allows mobile device access via local network
   }
