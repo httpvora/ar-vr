@@ -1,41 +1,93 @@
-import React, { useRef, useEffect, Suspense } from "react";
-import { Canvas } from "@react-three/fiber";
-import { useGLTF, OrbitControls } from "@react-three/drei";
-import { VRButton } from "three/examples/jsm/webxr/VRButton.js";
+import React, { useEffect, useRef, Suspense } from "react";
+import { Canvas, useThree } from "@react-three/fiber";
+import { ARButton } from "three/examples/jsm/webxr/ARButton.js";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import * as THREE from "three";
 
-// 3D GLB Model Loader
-function SassyModel({ path }) {
-  const { scene } = useGLTF(path);
+function ProductModel({ glbPath }) {
+  const group = useRef();
+
   useEffect(() => {
-    scene.scale.set(1, 1, 1);        // scale as needed
-    scene.rotation.set(0, Math.PI, 0); // adjust facing
-  }, [scene]);
-  return <primitive object={scene} />;
+    const loader = new GLTFLoader();
+    loader.load(
+      glbPath,
+      (gltf) => {
+        const model = gltf.scene;
+        model.scale.set(0.4, 0.4, 0.4);
+        model.rotation.set(0, Math.PI, 0);
+        group.current.add(model);
+      },
+      undefined,
+      (err) => console.error("Error loading model:", err)
+    );
+  }, [glbPath]);
+
+  return <group ref={group} />;
 }
 
-export default function SassyVRViewer() {
-  const mountRef = useRef();
+function ARAutoPlace({ modelRef }) {
+  const { gl } = useThree();
+  const hitTestSourceRef = useRef();
+  const localSpaceRef = useRef();
 
   useEffect(() => {
-    // Add VRButton to Canvas for VR entry
-    if (!document.querySelector(".vr-button")) {
-      const button = VRButton.createButton(mountRef.current.querySelector("canvas"));
-      button.className = "vr-button";
-      Object.assign(button.style, {
-        position: "absolute",
-        bottom: "20px",
-        left: "50%",
-        transform: "translateX(-50%)",
-        padding: "14px 28px",
-        borderRadius: "9px",
-        background: "#fff",
-        color: "#222",
-        fontWeight: "700",
-        fontSize: "18px",
-        zIndex: 12,
+    const session = gl.xr.getSession();
+    if (!session) return;
+
+    session.requestReferenceSpace("viewer").then((viewerSpace) => {
+      session.requestHitTestSource({ space: viewerSpace }).then((source) => {
+        hitTestSourceRef.current = source;
       });
-      mountRef.current.appendChild(button);
+    });
+
+    session.requestReferenceSpace("local").then((localSpace) => {
+      localSpaceRef.current = localSpace;
+    });
+
+    const onFrame = (time, frame) => {
+      const source = hitTestSourceRef.current;
+      const localSpace = localSpaceRef.current;
+      if (!source || !localSpace) return;
+      const hits = frame.getHitTestResults(source);
+      if (hits.length > 0) {
+        const hit = hits[0];
+        const pose = hit.getPose(localSpace);
+        if (pose && modelRef.current) {
+          modelRef.current.visible = true;
+          modelRef.current.position.set(
+            pose.transform.position.x,
+            pose.transform.position.y,
+            pose.transform.position.z
+          );
+          modelRef.current.quaternion.set(
+            pose.transform.orientation.x,
+            pose.transform.orientation.y,
+            pose.transform.orientation.z,
+            pose.transform.orientation.w
+          );
+        }
+      }
+      session.requestAnimationFrame(onFrame);
+    };
+    session.requestAnimationFrame(onFrame);
+  }, [gl]);
+
+  return null;
+}
+
+export default function ARToiletViewer() {
+  const mountRef = useRef();
+  const modelGroupRef = useRef(new THREE.Group());
+
+  useEffect(() => {
+    async function requestCamera() {
+      try {
+        await navigator.mediaDevices.getUserMedia({ video: true });
+      } catch {
+        alert("Please allow camera access");
+      }
     }
+    requestCamera();
   }, []);
 
   return (
@@ -44,24 +96,45 @@ export default function SassyVRViewer() {
       style={{
         width: "100vw",
         height: "100vh",
-        background: "#111",
+        background: "#000",
         position: "relative",
-        overflow: "hidden",
       }}
     >
       <Canvas
-        camera={{ position: [0, 1.5, 3.5], fov: 65 }}
-        style={{ width: "100vw", height: "100vh" }}
+        camera={{ position: [0, 1.6, 0], fov: 70 }}
         onCreated={({ gl }) => {
           gl.xr.enabled = true;
+          if (!document.querySelector(".ar-button")) {
+            const button = ARButton.createButton(gl, {
+              requiredFeatures: ["hit-test"],
+            });
+            button.classList.add("ar-button");
+            Object.assign(button.style, {
+              position: "absolute",
+              bottom: "20px",
+              left: "50%",
+              transform: "translateX(-50%)",
+              padding: "10px 20px",
+              borderRadius: "10px",
+              background: "#fff",
+              color: "#000",
+              fontWeight: "600",
+              zIndex: 10,
+            });
+            mountRef.current.appendChild(button);
+          }
         }}
       >
-        <ambientLight intensity={1.2} />
+        <ambientLight intensity={1} />
         <directionalLight position={[2, 5, 2]} intensity={1.2} />
-        <Suspense fallback={null}>
-          <SassyModel path="/sassy.glb" />
-        </Suspense>
-        <OrbitControls enablePan enableZoom enableRotate />
+
+        <group ref={modelGroupRef}>
+          <Suspense fallback={null}>
+            <ProductModel glbPath="/sassy.glb" />
+          </Suspense>
+        </group>
+
+        <ARAutoPlace modelRef={modelGroupRef} />
       </Canvas>
     </div>
   );
