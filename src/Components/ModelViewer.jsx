@@ -4,8 +4,9 @@ import { ARButton } from "three/examples/jsm/webxr/ARButton.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import * as THREE from "three";
 
+/* --- Load 3D Toilet Model --- */
 function ProductModel({ glbPath = "/sassy.glb" }) {
-  const groupRef = useRef();
+  const ref = useRef();
 
   useEffect(() => {
     const loader = new GLTFLoader();
@@ -13,56 +14,100 @@ function ProductModel({ glbPath = "/sassy.glb" }) {
       glbPath,
       (gltf) => {
         const model = gltf.scene;
-        model.scale.set(0.35, 0.35, 0.35);
+        model.scale.set(0.3, 0.3, 0.3);
         model.rotation.set(0, Math.PI, 0);
-        model.position.set(0, -0.5, -1); // position in front of user
-        groupRef.current.add(model);
+        model.position.set(0, 0, 0);
+        ref.current.add(model);
       },
       undefined,
-      (error) => console.error("Error loading model:", error)
+      (err) => console.error("GLB load error:", err)
     );
   }, [glbPath]);
 
-  return <group ref={groupRef} />;
+  return <group ref={ref} />;
 }
 
-function ARController({ modelGroupRef }) {
-  const { gl } = useThree();
+/* --- AR Wall Placement Controller --- */
+function ARWallPlacement({ modelGroupRef }) {
+  const { gl, camera } = useThree();
+  const hitTestSourceRef = useRef(null);
+  const localSpaceRef = useRef(null);
+  const [placed, setPlaced] = useState(false);
 
   useEffect(() => {
-    const onStart = () => {
-      const model = modelGroupRef.current;
-      if (model) {
-        model.position.set(0, -0.5, -1); // fixed in front
-        model.rotation.set(0, Math.PI, 0);
-      }
+    const session = gl.xr.getSession();
+    if (!session) return;
+
+    let viewerSpace = null;
+    let hitTestSource = null;
+
+    session.requestReferenceSpace("viewer").then((space) => {
+      viewerSpace = space;
+      session.requestHitTestSource({ space: viewerSpace }).then((source) => {
+        hitTestSource = source;
+        hitTestSourceRef.current = hitTestSource;
+      });
+    });
+
+    session.requestReferenceSpace("local").then((space) => {
+      localSpaceRef.current = space;
+    });
+
+    const onSelect = () => {
+      if (!placed) setPlaced(true);
     };
 
-    gl.xr.addEventListener("sessionstart", onStart);
+    session.addEventListener("select", onSelect);
     return () => {
-      gl.xr.removeEventListener("sessionstart", onStart);
+      session.removeEventListener("select", onSelect);
+      if (hitTestSourceRef.current) hitTestSourceRef.current.cancel();
     };
-  }, [gl, modelGroupRef]);
+  }, [gl, placed]);
+
+  useFrame(() => {
+    const model = modelGroupRef.current;
+    const xrFrame = gl.xr.getFrame();
+    const session = gl.xr.getSession();
+    if (!session || !xrFrame || !hitTestSourceRef.current || !localSpaceRef.current) return;
+
+    const hitTestResults = xrFrame.getHitTestResults(hitTestSourceRef.current);
+    if (hitTestResults.length > 0) {
+      const hit = hitTestResults[0];
+      const pose = hit.getPose(localSpaceRef.current);
+      if (pose) {
+        if (!placed) {
+          // Keep model following camera until user taps screen
+          model.position.set(pose.transform.position.x, pose.transform.position.y, pose.transform.position.z);
+          model.quaternion.set(
+            pose.transform.orientation.x,
+            pose.transform.orientation.y,
+            pose.transform.orientation.z,
+            pose.transform.orientation.w
+          );
+        }
+      }
+    }
+  });
 
   return null;
 }
 
+/* --- Main Component --- */
 export default function ARProductViewer({ glbPath = "/sassy.glb" }) {
   const mountRef = useRef(null);
   const modelGroupRef = useRef(new THREE.Group());
   const [permissionGranted, setPermissionGranted] = useState(false);
 
   useEffect(() => {
-    async function requestCameraPermission() {
+    async function askPermission() {
       try {
         await navigator.mediaDevices.getUserMedia({ video: true });
         setPermissionGranted(true);
-      } catch (err) {
-        console.error("Camera permission denied:", err);
-        alert("Please allow camera access to use AR features.");
+      } catch {
+        alert("Please allow camera permission for AR.");
       }
     }
-    requestCameraPermission();
+    askPermission();
   }, []);
 
   return (
@@ -76,11 +121,12 @@ export default function ARProductViewer({ glbPath = "/sassy.glb" }) {
           onCreated={({ gl }) => {
             gl.xr.enabled = true;
             if (!document.querySelector(".ar-button")) {
-              const button = ARButton.createButton(gl, {
-                optionalFeatures: ["dom-overlay", "local-floor"],
+              const btn = ARButton.createButton(gl, {
+                requiredFeatures: ["hit-test", "local-floor"],
+                optionalFeatures: ["dom-overlay"],
               });
-              button.classList.add("ar-button");
-              Object.assign(button.style, {
+              btn.classList.add("ar-button");
+              Object.assign(btn.style, {
                 position: "absolute",
                 bottom: "20px",
                 left: "50%",
@@ -92,12 +138,12 @@ export default function ARProductViewer({ glbPath = "/sassy.glb" }) {
                 fontWeight: "600",
                 zIndex: 10,
               });
-              mountRef.current.appendChild(button);
+              mountRef.current.appendChild(btn);
             }
           }}
         >
           <ambientLight intensity={1} />
-          <directionalLight position={[0, 5, 5]} intensity={1.2} />
+          <directionalLight position={[0, 3, 2]} intensity={1.2} />
 
           <group ref={modelGroupRef}>
             <Suspense fallback={null}>
@@ -105,7 +151,7 @@ export default function ARProductViewer({ glbPath = "/sassy.glb" }) {
             </Suspense>
           </group>
 
-          <ARController modelGroupRef={modelGroupRef} />
+          <ARWallPlacement modelGroupRef={modelGroupRef} />
         </Canvas>
       ) : (
         <div
@@ -116,8 +162,7 @@ export default function ARProductViewer({ glbPath = "/sassy.glb" }) {
             justifyContent: "center",
             alignItems: "center",
             color: "#fff",
-            fontSize: "18px",
-            textAlign: "center",
+            fontSize: 18,
           }}
         >
           Requesting camera permission...
