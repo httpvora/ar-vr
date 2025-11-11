@@ -9,7 +9,7 @@ export default defineConfig({
     include: ['three', '@react-three/fiber', '@react-three/drei']
   },
   server: {
-    https: false,
+    https: true,
     port: 5178,
     host: true // ✅ allows mobile device access via local network
   }
