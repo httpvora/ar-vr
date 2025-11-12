@@ -4,13 +4,14 @@ import { ARButton } from "three/examples/jsm/webxr/ARButton.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import * as THREE from "three";
 
-// Helper for centering the model based on its bounding box
+// Utility to center the model based on its bounding box
 function centerModel(model) {
   const box = new THREE.Box3().setFromObject(model);
   const center = box.getCenter(new THREE.Vector3());
-  model.position.sub(center); // Shift model so its center matches the origin
+  model.position.sub(center); // Shift so center is at (0,0,0)
 }
 
+// Main product model loader with proper angle and scale
 function ProductModel({ glbPath = "/sassy.glb" }) {
   const groupRef = useRef();
 
@@ -20,9 +21,9 @@ function ProductModel({ glbPath = "/sassy.glb" }) {
       glbPath,
       (gltf) => {
         const model = gltf.scene;
-        model.scale.set(0.6, 0.6, 0.6); // Adjust if needed
+        model.scale.set(0.32, 0.32, 0.32); // Moderate scale, tweak if needed
         centerModel(model);
-        model.rotation.set(0, 0, 0);
+        model.rotation.set(-Math.PI / 7, -Math.PI / 2, 0); // 3/4 top-left angle
         groupRef.current.add(model);
       },
       undefined,
@@ -33,6 +34,7 @@ function ProductModel({ glbPath = "/sassy.glb" }) {
   return <group ref={groupRef} />;
 }
 
+// AR controller for session start, ensures reset angle/position for AR
 function ARController({ modelGroupRef }) {
   const { gl } = useThree();
 
@@ -41,7 +43,7 @@ function ARController({ modelGroupRef }) {
       const model = modelGroupRef.current;
       if (model) {
         model.position.set(0, 0, 0);
-        model.rotation.set(0, 0, 0);
+        model.rotation.set(-Math.PI / 7, -Math.PI / 2, 0); // Consistent AR angle
       }
     };
     gl.xr.addEventListener("sessionstart", onStart);
@@ -51,6 +53,7 @@ function ARController({ modelGroupRef }) {
   return null;
 }
 
+// Main AR product viewer
 export default function ARProductViewer({ glbPath = "/sassy.glb" }) {
   const mountRef = useRef(null);
   const modelGroupRef = useRef(new THREE.Group());
@@ -92,7 +95,10 @@ export default function ARProductViewer({ glbPath = "/sassy.glb" }) {
     >
       {permissionGranted ? (
         <Canvas
-          camera={{ position: [0, 1.6, 2.5], fov: 70 }}
+          camera={{
+            position: [1.3, 1.4, 3.1], // Slightly right, above, and zoomed out
+            fov: 35, // Narrow FOV for product view
+          }}
           onCreated={({ gl }) => {
             gl.xr.enabled = true;
             gl.setSize(window.innerWidth, window.innerHeight);
@@ -122,8 +128,8 @@ export default function ARProductViewer({ glbPath = "/sassy.glb" }) {
             }
           }}
         >
-          <ambientLight intensity={1.2} />
-          <directionalLight position={[2, 5, 3]} intensity={1.5} />
+          <ambientLight intensity={1.0} />
+          <directionalLight position={[2, 6, 4]} intensity={2} />
           <group ref={modelGroupRef}>
             <Suspense fallback={null}>
               <ProductModel glbPath={glbPath} />
