@@ -4,6 +4,13 @@ import { ARButton } from "three/examples/jsm/webxr/ARButton.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import * as THREE from "three";
 
+// Helper for centering the model based on its bounding box
+function centerModel(model) {
+  const box = new THREE.Box3().setFromObject(model);
+  const center = box.getCenter(new THREE.Vector3());
+  model.position.sub(center); // Shift model so its center matches the origin
+}
+
 function ProductModel({ glbPath = "/sassy.glb" }) {
   const groupRef = useRef();
 
@@ -13,9 +20,9 @@ function ProductModel({ glbPath = "/sassy.glb" }) {
       glbPath,
       (gltf) => {
         const model = gltf.scene;
-        model.scale.set(0.35, 0.35, 0.35);
-        model.rotation.set(0, Math.PI, 0);
-        model.position.set(0, -0.5, -1);
+        model.scale.set(0.6, 0.6, 0.6); // Adjust if needed
+        centerModel(model);
+        model.rotation.set(0, 0, 0);
         groupRef.current.add(model);
       },
       undefined,
@@ -33,11 +40,10 @@ function ARController({ modelGroupRef }) {
     const onStart = () => {
       const model = modelGroupRef.current;
       if (model) {
-        model.position.set(0, -0.5, -1);
-        model.rotation.set(0, Math.PI, 0);
+        model.position.set(0, 0, 0);
+        model.rotation.set(0, 0, 0);
       }
     };
-
     gl.xr.addEventListener("sessionstart", onStart);
     return () => gl.xr.removeEventListener("sessionstart", onStart);
   }, [gl, modelGroupRef]);
@@ -51,6 +57,10 @@ export default function ARProductViewer({ glbPath = "/sassy.glb" }) {
   const [permissionGranted, setPermissionGranted] = useState(false);
 
   useEffect(() => {
+    document.body.style.margin = "0";
+    document.body.style.padding = "0";
+    document.body.style.overflow = "hidden";
+
     async function requestCameraPermission() {
       try {
         await navigator.mediaDevices.getUserMedia({ video: true });
@@ -61,6 +71,10 @@ export default function ARProductViewer({ glbPath = "/sassy.glb" }) {
       }
     }
     requestCameraPermission();
+
+    return () => {
+      document.body.style.overflow = "auto";
+    };
   }, []);
 
   return (
@@ -69,17 +83,20 @@ export default function ARProductViewer({ glbPath = "/sassy.glb" }) {
       style={{
         width: "100vw",
         height: "100vh",
-        position: "relative",
+        position: "fixed",
+        top: 0,
+        left: 0,
         background: "#000",
+        overflow: "hidden",
       }}
     >
       {permissionGranted ? (
         <Canvas
-          camera={{ position: [0, 1.6, 0], fov: 70 }}
+          camera={{ position: [0, 1.6, 2.5], fov: 70 }}
           onCreated={({ gl }) => {
             gl.xr.enabled = true;
             gl.setSize(window.innerWidth, window.innerHeight);
-            gl.setClearColor(0x000000, 0); // Transparent background
+            gl.setClearColor(0x000000, 0);
 
             if (!document.querySelector(".ar-button")) {
               const button = ARButton.createButton(gl, {
@@ -99,20 +116,19 @@ export default function ARProductViewer({ glbPath = "/sassy.glb" }) {
                 color: "#000",
                 fontWeight: "600",
                 zIndex: 10,
+                cursor: "pointer",
               });
               mountRef.current.appendChild(button);
             }
           }}
         >
-          <ambientLight intensity={1} />
-          <directionalLight position={[0, 5, 5]} intensity={1.2} />
-
+          <ambientLight intensity={1.2} />
+          <directionalLight position={[2, 5, 3]} intensity={1.5} />
           <group ref={modelGroupRef}>
             <Suspense fallback={null}>
               <ProductModel glbPath={glbPath} />
             </Suspense>
           </group>
-
           <ARController modelGroupRef={modelGroupRef} />
         </Canvas>
       ) : (
