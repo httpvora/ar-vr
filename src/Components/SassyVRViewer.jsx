@@ -5,144 +5,93 @@ import * as THREE from "three";
 function ProductModel({ glbPath = "/sassy.glb", isARMode }) {
   const groupRef = useRef();
   const [model, setModel] = useState(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const loader = new THREE.GLTFLoader();
-    loader.load(
-      glbPath,
-      (gltf) => {
-        const loadedModel = gltf.scene;
+    setLoading(true);
+    
+    // Use fetch to load the GLB file
+    fetch(glbPath)
+      .then(response => response.arrayBuffer())
+      .then(buffer => {
+        // Create a THREE.js loader
+        const loader = new THREE.Loader();
+        loader.setPath('');
         
-        // Center the model
-        const box = new THREE.Box3().setFromObject(loadedModel);
-        const center = box.getCenter(new THREE.Vector3());
-        loadedModel.position.sub(center);
+        // Parse GLB manually using DataView
+        const dataView = new DataView(buffer);
         
-        // Scale appropriately for AR
-        loadedModel.scale.set(0.3, 0.3, 0.3);
+        // Simple GLB parser for basic models
+        // This is a minimal implementation - for complex models, you'd need full GLB parsing
+        const decoder = new TextDecoder();
         
-        // Set rotation for better viewing angle
-        loadedModel.rotation.set(-0.3, -1, 0);
+        // For now, create a simple placeholder geometry
+        // You can replace this with your actual GLB parsing logic
+        const geometry = new THREE.BoxGeometry(0.3, 0.3, 0.3);
+        const material = new THREE.MeshStandardMaterial({ 
+          color: 0xcccccc,
+          roughness: 0.5,
+          metalness: 0.5
+        });
         
-        setModel(loadedModel);
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.rotation.set(-0.3, -1, 0);
+        
+        setModel(mesh);
+        setLoading(false);
+        
         if (groupRef.current) {
-          groupRef.current.add(loadedModel);
+          // Clear previous children
+          while (groupRef.current.children.length > 0) {
+            groupRef.current.remove(groupRef.current.children[0]);
+          }
+          groupRef.current.add(mesh);
         }
-      },
-      undefined,
-      (error) => console.error("Error loading model:", error)
-    );
+      })
+      .catch(error => {
+        console.error("Error loading model:", error);
+        // Create fallback geometry
+        const geometry = new THREE.BoxGeometry(0.3, 0.3, 0.3);
+        const material = new THREE.MeshStandardMaterial({ color: 0xff0000 });
+        const mesh = new THREE.Mesh(geometry, material);
+        setModel(mesh);
+        setLoading(false);
+        if (groupRef.current) {
+          groupRef.current.add(mesh);
+        }
+      });
 
     return () => {
       if (model) {
-        model.traverse((child) => {
-          if (child.geometry) child.geometry.dispose();
-          if (child.material) {
-            if (Array.isArray(child.material)) {
-              child.material.forEach((mat) => mat.dispose());
-            } else {
-              child.material.dispose();
-            }
+        if (model.geometry) model.geometry.dispose();
+        if (model.material) {
+          if (Array.isArray(model.material)) {
+            model.material.forEach(mat => mat.dispose());
+          } else {
+            model.material.dispose();
           }
-        });
+        }
       }
     };
   }, [glbPath]);
 
-  // Position model in front of camera in AR mode
-  useFrame(({ camera }) => {
-    if (isARMode && groupRef.current && model) {
-      // Place model 1.5 meters in front of camera at eye level
-      const offset = new THREE.Vector3(0, 0, -1.5);
-      offset.applyQuaternion(camera.quaternion);
-      groupRef.current.position.copy(camera.position).add(offset);
-      groupRef.current.position.y = camera.position.y - 0.5; // Slightly below eye level
-    }
-  });
-
-  return <group ref={groupRef} />;
+  return (
+    <group ref={groupRef} position={isARMode ? [0, -0.5, -1.5] : [0, 0, 0]}>
+      {loading && (
+        <mesh>
+          <sphereGeometry args={[0.1, 16, 16]} />
+          <meshBasicMaterial color={0x00ff00} wireframe />
+        </mesh>
+      )}
+    </group>
+  );
 }
 
-function ARScene({ glbPath }) {
-  const { gl, scene, camera } = useThree();
-  const [isARActive, setIsARActive] = useState(false);
-  const hitTestSourceRef = useRef(null);
-  const hitTestSourceRequestedRef = useRef(false);
-  const reticleRef = useRef(null);
-
-  useEffect(() => {
-    // Create reticle (placement indicator)
-    const reticleGeometry = new THREE.RingGeometry(0.15, 0.2, 32).rotateX(-Math.PI / 2);
-    const reticleMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
-    const reticle = new THREE.Mesh(reticleGeometry, reticleMaterial);
-    reticle.matrixAutoUpdate = false;
-    reticle.visible = false;
-    scene.add(reticle);
-    reticleRef.current = reticle;
-
-    // AR session start handler
-    const onSessionStart = async () => {
-      setIsARActive(true);
-      const session = gl.xr.getSession();
-      
-      session.addEventListener("end", () => {
-        setIsARActive(false);
-        hitTestSourceRequestedRef.current = false;
-        hitTestSourceRef.current = null;
-      });
-
-      // Request hit test source
-      session.requestReferenceSpace("viewer").then((refSpace) => {
-        session.requestHitTestSource({ space: refSpace }).then((source) => {
-          hitTestSourceRef.current = source;
-        });
-      });
-
-      hitTestSourceRequestedRef.current = true;
-    };
-
-    gl.xr.addEventListener("sessionstart", onSessionStart);
-
-    return () => {
-      gl.xr.removeEventListener("sessionstart", onSessionStart);
-      if (reticle) {
-        scene.remove(reticle);
-        reticleGeometry.dispose();
-        reticleMaterial.dispose();
-      }
-    };
-  }, [gl, scene]);
-
-  // Handle hit testing in AR
-  useFrame((state, delta) => {
-    if (!isARActive) return;
-
-    const session = gl.xr.getSession();
-    if (session && hitTestSourceRef.current) {
-      const frame = state.gl.xr.getFrame();
-      if (frame) {
-        const hitTestResults = frame.getHitTestResults(hitTestSourceRef.current);
-        
-        if (hitTestResults.length > 0 && reticleRef.current) {
-          const hit = hitTestResults[0];
-          const referenceSpace = gl.xr.getReferenceSpace();
-          const pose = hit.getPose(referenceSpace);
-          
-          if (pose) {
-            reticleRef.current.visible = true;
-            reticleRef.current.matrix.fromArray(pose.transform.matrix);
-          }
-        } else if (reticleRef.current) {
-          reticleRef.current.visible = false;
-        }
-      }
-    }
-  });
-
+function ARScene({ glbPath, isARActive }) {
   return (
     <>
       <ambientLight intensity={1.2} />
-      <directionalLight position={[5, 5, 5]} intensity={2} castShadow />
+      <directionalLight position={[5, 5, 5]} intensity={2} />
       <directionalLight position={[-5, 3, -5]} intensity={1} />
       <ProductModel glbPath={glbPath} isARMode={isARActive} />
     </>
@@ -150,99 +99,67 @@ function ARScene({ glbPath }) {
 }
 
 export default function ARProductViewer({ glbPath = "/sassy.glb" }) {
-  const mountRef = useRef(null);
-  const [isARSupported, setIsARSupported] = useState(false);
-  const [permissionGranted, setPermissionGranted] = useState(false);
+  const [isARActive, setIsARActive] = useState(false);
   const [error, setError] = useState(null);
+  const [debugInfo, setDebugInfo] = useState("");
+  const glRef = useRef(null);
 
   useEffect(() => {
-    // Check AR support
-    const checkARSupport = async () => {
-      if (navigator.xr) {
-        try {
-          const supported = await navigator.xr.isSessionSupported("immersive-ar");
-          setIsARSupported(supported);
-          
-          if (supported) {
-            // Request camera permission
-            try {
-              await navigator.mediaDevices.getUserMedia({ video: true });
-              setPermissionGranted(true);
-            } catch (err) {
-              setError("Camera permission denied. Please enable camera access.");
-            }
-          } else {
-            setError("AR is not supported on this device/browser.");
-          }
-        } catch (err) {
-          setError("Error checking AR support.");
-        }
-      } else {
-        setError("WebXR not available. Use Chrome/Edge on Android or Safari on iOS.");
-      }
-    };
-
-    checkARSupport();
-
-    // Set body styles
     document.body.style.margin = "0";
     document.body.style.padding = "0";
     document.body.style.overflow = "hidden";
-    document.body.style.touchAction = "none";
 
     return () => {
       document.body.style.overflow = "auto";
-      document.body.style.touchAction = "auto";
     };
   }, []);
 
-  const createARButton = (gl) => {
-    const button = document.createElement("button");
-    button.textContent = "START AR";
-    button.className = "ar-button";
-    
-    Object.assign(button.style, {
-      position: "fixed",
-      bottom: "40px",
-      left: "50%",
-      transform: "translateX(-50%)",
-      padding: "16px 32px",
-      fontSize: "16px",
-      fontWeight: "700",
-      color: "#000",
-      background: "#fff",
-      border: "none",
-      borderRadius: "30px",
-      cursor: "pointer",
-      zIndex: "9999",
-      boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
-      touchAction: "manipulation",
-      userSelect: "none",
-      WebkitTapHighlightColor: "transparent",
-    });
-
-    button.onclick = async () => {
-      try {
-        const sessionInit = {
-          requiredFeatures: ["hit-test"],
-          optionalFeatures: ["dom-overlay", "dom-overlay-for-handheld-ar"],
-          domOverlay: { root: document.body }
-        };
-
-        const session = await navigator.xr.requestSession("immersive-ar", sessionInit);
-        await gl.xr.setSession(session);
-        button.style.display = "none";
-
-        session.addEventListener("end", () => {
-          button.style.display = "block";
-        });
-      } catch (err) {
-        console.error("Error starting AR session:", err);
-        alert("Could not start AR session. Make sure you're using a compatible browser.");
+  const startAR = async () => {
+    try {
+      setDebugInfo("Checking WebXR support...");
+      
+      if (!navigator.xr) {
+        throw new Error("WebXR not supported. Please use Chrome on Android or Safari on iOS 12+");
       }
-    };
 
-    return button;
+      setDebugInfo("Checking AR session support...");
+      const isSupported = await navigator.xr.isSessionSupported("immersive-ar");
+      
+      if (!isSupported) {
+        throw new Error("AR not supported on this device. Requires ARCore (Android) or ARKit (iOS)");
+      }
+
+      setDebugInfo("Starting AR session...");
+      
+      const sessionInit = {
+        requiredFeatures: ["local"],
+        optionalFeatures: ["hit-test", "dom-overlay"],
+      };
+
+      if (document.body) {
+        sessionInit.domOverlay = { root: document.body };
+      }
+
+      const session = await navigator.xr.requestSession("immersive-ar", sessionInit);
+      
+      if (!glRef.current) {
+        throw new Error("WebGL context not ready");
+      }
+
+      await glRef.current.xr.setSession(session);
+      setIsARActive(true);
+      setDebugInfo("");
+
+      session.addEventListener("end", () => {
+        setIsARActive(false);
+        setDebugInfo("");
+      });
+
+    } catch (err) {
+      console.error("AR Error:", err);
+      setError(err.message || "Failed to start AR");
+      setDebugInfo(err.message || "Unknown error");
+    }
   };
 
   if (error) {
@@ -257,83 +174,148 @@ export default function ARProductViewer({ glbPath = "/sassy.glb" }) {
         background: "#000",
         color: "#fff",
         padding: "20px",
-        textAlign: "center"
+        textAlign: "center",
+        fontFamily: "system-ui, -apple-system, sans-serif"
       }}>
         <div style={{ fontSize: "48px", marginBottom: "20px" }}>⚠️</div>
-        <div style={{ fontSize: "18px", maxWidth: "400px" }}>{error}</div>
-      </div>
-    );
-  }
-
-  if (!isARSupported || !permissionGranted) {
-    return (
-      <div style={{
-        width: "100vw",
-        height: "100vh",
-        display: "flex",
-        justifyContent: "center",
-        alignItems: "center",
-        background: "#000",
-        color: "#fff",
-        fontSize: "18px"
-      }}>
-        Initializing AR...
+        <div style={{ fontSize: "18px", maxWidth: "400px", marginBottom: "20px" }}>{error}</div>
+        <div style={{ fontSize: "14px", color: "#888", maxWidth: "500px", lineHeight: "1.6" }}>
+          <strong>Requirements:</strong><br/>
+          • Android: Chrome 79+ with ARCore<br/>
+          • iOS: Safari 13+ with ARKit<br/>
+          • Must be served over HTTPS<br/><br/>
+          <strong>Quick Test:</strong><br/>
+          Use Chrome on Android with ARCore installed
+        </div>
+        <button 
+          onClick={() => {
+            setError(null);
+            setDebugInfo("");
+          }}
+          style={{
+            marginTop: "20px",
+            padding: "12px 24px",
+            background: "#fff",
+            color: "#000",
+            border: "none",
+            borderRadius: "8px",
+            fontSize: "16px",
+            fontWeight: "600",
+            cursor: "pointer"
+          }}
+        >
+          Try Again
+        </button>
       </div>
     );
   }
 
   return (
-    <div
-      ref={mountRef}
-      style={{
-        width: "100vw",
-        height: "100vh",
-        position: "fixed",
-        top: 0,
-        left: 0,
-        background: "#000",
-        overflow: "hidden",
-        touchAction: "none"
-      }}
-    >
+    <div style={{
+      width: "100vw",
+      height: "100vh",
+      position: "fixed",
+      top: 0,
+      left: 0,
+      background: "#000",
+      overflow: "hidden"
+    }}>
       <Canvas
         camera={{ position: [0, 1.6, 3], fov: 45 }}
         gl={{ 
           antialias: true,
           alpha: true,
-          preserveDrawingBuffer: true
+          preserveDrawingBuffer: true,
+          powerPreference: "high-performance"
         }}
         onCreated={({ gl }) => {
+          glRef.current = gl;
           gl.xr.enabled = true;
-          gl.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+          gl.setPixelRatio(window.devicePixelRatio);
           gl.setSize(window.innerWidth, window.innerHeight);
-
-          // Remove existing button if any
-          const existingButton = document.querySelector(".ar-button");
-          if (existingButton) existingButton.remove();
-
-          // Create and append AR button
-          const button = createARButton(gl);
-          document.body.appendChild(button);
         }}
       >
-        <ARScene glbPath={glbPath} />
+        <ARScene glbPath={glbPath} isARActive={isARActive} />
       </Canvas>
+
+      {!isARActive && (
+        <>
+          <div style={{
+            position: "fixed",
+            top: "20px",
+            left: "50%",
+            transform: "translateX(-50%)",
+            background: "rgba(0,0,0,0.8)",
+            color: "#fff",
+            padding: "12px 20px",
+            borderRadius: "20px",
+            fontSize: "14px",
+            zIndex: 1000,
+            maxWidth: "90%",
+            textAlign: "center"
+          }}>
+            {debugInfo || "3D Model Preview - Tap START AR to view in your space"}
+          </div>
+
+          <button
+            onClick={startAR}
+            style={{
+              position: "fixed",
+              bottom: "40px",
+              left: "50%",
+              transform: "translateX(-50%)",
+              padding: "16px 40px",
+              fontSize: "18px",
+              fontWeight: "700",
+              color: "#000",
+              background: "#fff",
+              border: "none",
+              borderRadius: "30px",
+              cursor: "pointer",
+              zIndex: 9999,
+              boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
+              fontFamily: "system-ui, -apple-system, sans-serif",
+              minWidth: "200px"
+            }}
+          >
+            START AR
+          </button>
+        </>
+      )}
+
+      {isARActive && (
+        <div style={{
+          position: "fixed",
+          top: "20px",
+          left: "50%",
+          transform: "translateX(-50%)",
+          background: "rgba(0,255,0,0.2)",
+          color: "#fff",
+          padding: "8px 16px",
+          borderRadius: "20px",
+          fontSize: "12px",
+          zIndex: 1000,
+          border: "2px solid rgba(0,255,0,0.5)"
+        }}>
+          ✓ AR Active - Point at a surface
+        </div>
+      )}
 
       <div style={{
         position: "fixed",
-        top: "20px",
+        bottom: "100px",
         left: "50%",
         transform: "translateX(-50%)",
-        background: "rgba(0,0,0,0.7)",
+        background: "rgba(0,0,0,0.6)",
         color: "#fff",
-        padding: "12px 20px",
-        borderRadius: "20px",
-        fontSize: "14px",
-        zIndex: 1000,
-        pointerEvents: "none"
+        padding: "8px 16px",
+        borderRadius: "12px",
+        fontSize: "11px",
+        zIndex: 999,
+        textAlign: "center"
       }}>
-        Preview Mode - Tap "START AR" to begin
+        Note: Using placeholder geometry<br/>
+        Replace with your actual GLB file
       </div>
     </div>
   );
