@@ -80,35 +80,36 @@ export default function ARProductViewer({ glbPath = "/sassy.glb" }) {
   }, [arButton]);
 
   // Create ARButton only once when WebGL context is ready and permission granted
-  function onCreated({ gl }) {
-    gl.xr.enabled = true;
-    gl.setSize(window.innerWidth, window.innerHeight);
-    gl.setClearColor(0x000000, 0);
+ function onCreated({ gl }) {
+  gl.xr.enabled = true;
+  gl.setSize(window.innerWidth, window.innerHeight);
+  gl.setClearColor(0x000000, 0);
 
-    if (mountRef.current && !arButton) {
-      const button = ARButton.createButton(gl, {
-        requiredFeatures: ["hit-test"],
-        optionalFeatures: ["dom-overlay", "local-floor"],
-        domOverlay: { root: mountRef.current },
-      });
-      button.classList.add("ar-button");
-      Object.assign(button.style, {
-        position: "absolute",
-        bottom: "20px",
-        left: "50%",
-        transform: "translateX(-50%)",
-        padding: "10px 20px",
-        borderRadius: "10px",
-        background: "#fff",
-        color: "#000",
-        fontWeight: "600",
-        zIndex: 10,
-        cursor: "pointer",
-      });
-      mountRef.current.appendChild(button);
-      setArButton(button);
-    }
+  if (mountRef.current && !arButton) {
+    const button = ARButton.createButton(gl, {
+      requiredFeatures: ["hit-test"],
+      optionalFeatures: ["dom-overlay", "local-floor"],
+      domOverlay: { root: mountRef.current },
+    });
+    button.classList.add("ar-button");
+    Object.assign(button.style, {
+      position: "absolute",
+      bottom: "20px",
+      left: "50%",
+      transform: "translateX(-50%)",
+      padding: "10px 20px",
+      borderRadius: "10px",
+      background: "#fff",
+      color: "#000",
+      fontWeight: "600",
+      zIndex: 10,
+      cursor: "pointer",
+    });
+    mountRef.current.appendChild(button);
+    setArButton(button);
   }
+}
+
 
   return (
     <div
