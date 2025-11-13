@@ -4,14 +4,12 @@ import { ARButton } from "three/examples/jsm/webxr/ARButton.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import * as THREE from "three";
 
-// Center the model for consistent placement
 function centerModel(model) {
   const box = new THREE.Box3().setFromObject(model);
   const center = box.getCenter(new THREE.Vector3());
   model.position.sub(center);
 }
 
-// Load and orient the product model with correct angle
 function ProductModel({ glbPath = "/sassy.glb" }) {
   const groupRef = useRef();
 
@@ -22,12 +20,8 @@ function ProductModel({ glbPath = "/sassy.glb" }) {
       (gltf) => {
         const model = gltf.scene;
         model.scale.set(0.32, 0.32, 0.32);
-
         centerModel(model);
-
-        // Adjust below as needed to perfect orientation for your model
-        model.rotation.set(-0.22, Math.PI, 0); // X: downward tilt, Y: front toward viewer
-
+        model.rotation.set(-0.32, -1, 0);
         groupRef.current.add(model);
       },
       undefined,
@@ -43,10 +37,9 @@ function ARController({ modelGroupRef }) {
 
   useEffect(() => {
     const onStart = () => {
-      const model = modelGroupRef.current;
-      if (model) {
-        model.position.set(0, 0, 0);
-        model.rotation.set(-0.22, Math.PI, 0); // Ensure flush hole faces the user
+      if (modelGroupRef.current) {
+        modelGroupRef.current.position.set(0, 0, 0);
+        modelGroupRef.current.rotation.set(-0.32, -1, 0);
       }
     };
     gl.xr.addEventListener("sessionstart", onStart);
@@ -60,6 +53,7 @@ export default function ARProductViewer({ glbPath = "/sassy.glb" }) {
   const mountRef = useRef(null);
   const modelGroupRef = useRef(new THREE.Group());
   const [permissionGranted, setPermissionGranted] = useState(false);
+  const [arButton, setArButton] = useState(null);
 
   useEffect(() => {
     document.body.style.margin = "0";
@@ -79,8 +73,42 @@ export default function ARProductViewer({ glbPath = "/sassy.glb" }) {
 
     return () => {
       document.body.style.overflow = "auto";
+      if (arButton && mountRef.current) {
+        mountRef.current.removeChild(arButton);
+      }
     };
-  }, []);
+  }, [arButton]);
+
+  // Create ARButton only once when WebGL context is ready and permission granted
+  function onCreated({ gl }) {
+    gl.xr.enabled = true;
+    gl.setSize(window.innerWidth, window.innerHeight);
+    gl.setClearColor(0x000000, 0);
+
+    if (mountRef.current && !arButton) {
+      const button = ARButton.createButton(gl, {
+        requiredFeatures: ["hit-test"],
+        optionalFeatures: ["dom-overlay", "local-floor"],
+        domOverlay: { root: mountRef.current },
+      });
+      button.classList.add("ar-button");
+      Object.assign(button.style, {
+        position: "absolute",
+        bottom: "20px",
+        left: "50%",
+        transform: "translateX(-50%)",
+        padding: "10px 20px",
+        borderRadius: "10px",
+        background: "#fff",
+        color: "#000",
+        fontWeight: "600",
+        zIndex: 10,
+        cursor: "pointer",
+      });
+      mountRef.current.appendChild(button);
+      setArButton(button);
+    }
+  }
 
   return (
     <div
@@ -97,39 +125,8 @@ export default function ARProductViewer({ glbPath = "/sassy.glb" }) {
     >
       {permissionGranted ? (
         <Canvas
-          camera={{
-            position: [1.3, 1.4, 3.1],
-            fov: 35,
-          }}
-          onCreated={({ gl }) => {
-            gl.xr.enabled = true;
-            gl.setSize(window.innerWidth, window.innerHeight);
-            gl.setClearColor(0x000000, 0);
-
-            if (!document.querySelector(".ar-button")) {
-              const button = ARButton.createButton(gl, {
-                requiredFeatures: ["hit-test"],
-                optionalFeatures: ["dom-overlay", "local-floor"],
-                domOverlay: { root: mountRef.current },
-              });
-              button.classList.add("ar-button");
-              Object.assign(button.style, {
-                position: "absolute",
-                bottom: "20px",
-                left: "50%",
-                transform: "translateX(-50%)",
-                padding: "10px 20px",
-                borderRadius: "10px",
-                background: "#fff",
-                color: "#000",
-                fontWeight: "600",
-                zIndex: 10,
-                cursor: "pointer",
-              });
-              // Append to body for best reliability
-              document.body.appendChild(button);
-            }
-          }}
+          camera={{ position: [1.3, 1.4, 3.1], fov: 35 }}
+          onCreated={onCreated}
         >
           <ambientLight intensity={1.0} />
           <directionalLight position={[2, 6, 4]} intensity={2} />
@@ -151,6 +148,7 @@ export default function ARProductViewer({ glbPath = "/sassy.glb" }) {
             color: "#fff",
             fontSize: "18px",
             textAlign: "center",
+            padding: "0 20px",
           }}
         >
           Requesting camera permission...
