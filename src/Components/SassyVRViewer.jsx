@@ -4,12 +4,14 @@ import { ARButton } from "three/examples/jsm/webxr/ARButton.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import * as THREE from "three";
 
+// Center the model for consistent placement
 function centerModel(model) {
   const box = new THREE.Box3().setFromObject(model);
   const center = box.getCenter(new THREE.Vector3());
   model.position.sub(center);
 }
 
+// Load and orient the product model with correct angle
 function ProductModel({ glbPath = "/sassy.glb" }) {
   const groupRef = useRef();
 
@@ -23,9 +25,8 @@ function ProductModel({ glbPath = "/sassy.glb" }) {
 
         centerModel(model);
 
-        // Try X: -0.32 (about -18°), Y: -1 (about -57°)
-        // Adjust slightly up/down if needed for your taste
-        model.rotation.set(-0.32, -1, 0);
+        // Adjust below as needed to perfect orientation for your model
+        model.rotation.set(-0.22, Math.PI, 0); // X: downward tilt, Y: front toward viewer
 
         groupRef.current.add(model);
       },
@@ -45,7 +46,7 @@ function ARController({ modelGroupRef }) {
       const model = modelGroupRef.current;
       if (model) {
         model.position.set(0, 0, 0);
-        model.rotation.set(-0.32, -1, 0); // Match initial rotation
+        model.rotation.set(-0.22, Math.PI, 0); // Ensure flush hole faces the user
       }
     };
     gl.xr.addEventListener("sessionstart", onStart);
@@ -125,7 +126,8 @@ export default function ARProductViewer({ glbPath = "/sassy.glb" }) {
                 zIndex: 10,
                 cursor: "pointer",
               });
-              mountRef.current.appendChild(button);
+              // Append to body for best reliability
+              document.body.appendChild(button);
             }
           }}
         >
